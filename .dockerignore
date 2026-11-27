@@ -1,0 +1,10 @@
+.git
+.github
+**/__pycache__
+**/._*
+.DS_Store
+cw-demo
+tests_ml
+test
+library
+*.md

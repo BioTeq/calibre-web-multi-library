@@ -363,6 +363,9 @@ class ConfigSQL(object):
                 else:
                     setattr(self, k, v)
 
+        if os.environ.get('CALIBRE_WEB_PORT', '').isdigit():
+            self.config_port = int(os.environ['CALIBRE_WEB_PORT'])   # fixed by the environment (Docker)
+
         have_metadata_db = bool(self.config_calibre_dir)
         if have_metadata_db:
             db_file = os.path.join(self.config_calibre_dir, 'metadata.db')

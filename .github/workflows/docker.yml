@@ -1,0 +1,73 @@
+name: Docker image
+
+on:
+  push:
+    branches: [multi-library]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/bioteq/calibre-web-multi-library
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build for the smoke test (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: cwml:test
+
+      - name: Smoke test on two sample libraries
+        run: |
+          python3 -c "import sys; sys.path.insert(0, 'tests_ml'); import sample_libs; \
+            sample_libs.build('/tmp/books', 'Library A', ['Alpha One']); \
+            sample_libs.build('/tmp/books', 'Library B', ['Bravo One'])"
+          mkdir -p /tmp/config
+          docker run -d --name cw -p 8083:8083 -e PUID="$(id -u)" -e PGID="$(id -g)" \
+            -v /tmp/config:/config -v /tmp/books:/books cwml:test
+          for i in $(seq 1 60); do curl -fs -o /dev/null http://127.0.0.1:8083/login && break; sleep 2; done
+          curl -fsS -u admin:admin123 http://127.0.0.1:8083/opds | grep -q 'Library B'
+          curl -fsS -u admin:admin123 'http://127.0.0.1:8083/opds/new?library=library-b' | grep -q 'Bravo One'
+          curl -fsS -u admin:admin123 'http://127.0.0.1:8083/opds/new?library=library-a' | grep -q 'Alpha One'
+          ls -l /tmp/config /tmp/config/libraries
+
+      - name: Container log
+        if: always()
+        run: docker logs cw 2>&1 | tail -50 || true; tail -50 /tmp/config/calibre-web.log || true
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha,format=short
+
+      - name: Build and push (amd64, arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

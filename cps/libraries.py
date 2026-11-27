@@ -256,6 +256,20 @@ def sync_from_config(config):
     """Keep the registry in step with the classic single-library settings and the optional library root."""
     from . import ub
     s = ub.session
+    root = os.environ.get(ENV_ROOT)
+    if not config.config_calibre_dir and root and os.path.isdir(root):
+        # fresh install: the default library is CALIBRE_DEFAULT_LIBRARY (a folder name under the root) or the first one
+        found = [e for e in sorted(os.listdir(root)) if not e.startswith(('.', '_'))
+                 and os.path.isfile(os.path.join(root, e, 'metadata.db'))]
+        wanted = os.environ.get('CALIBRE_DEFAULT_LIBRARY')
+        pick = wanted if wanted in found else (found[0] if found else None)
+        if pick:
+            config.config_calibre_dir = os.path.join(root, pick)
+            config.db_configured = True
+            config.save()
+            from . import db
+            db.CalibreDB.update_config(config, config.config_calibre_dir, ub.app_DB_path)
+            log.info('Default library set to %s', config.config_calibre_dir)
     lib_dir = config.config_calibre_dir
     if lib_dir and os.path.isfile(os.path.join(lib_dir, 'metadata.db')):
         first = s.query(ub.Library).order_by(ub.Library.id).first()
@@ -266,7 +280,6 @@ def sync_from_config(config):
         elif first.path != lib_dir or first.split_dir != split:
             # the classic "database configuration" page edits the default library
             first.path, first.split_dir = lib_dir, split
-    root = os.environ.get(ENV_ROOT)
     if root and os.path.isdir(root):
         known = {os.path.realpath(r.path) for r in s.query(ub.Library).all()}
         top = (s.query(ub.func.max(ub.Library.sort)).scalar() or 0) if hasattr(ub, 'func') else 0
