@@ -6,7 +6,7 @@ Each test session builds, in a temporary folder:
 and starts the server with CALIBRE_LIBRARY_ROOT=libs, so Library B is found on its own.
 Run:  python -m pytest tests_ml -q      (CWTEST_KEEP=1 keeps the temporary folder for inspection)
 """
-import os, re, shutil, signal, sqlite3, subprocess, sys, tempfile, time
+import contextlib, os, re, shutil, signal, sqlite3, subprocess, sys, tempfile, time
 import pytest, requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -29,19 +29,20 @@ config_sql.load_configuration(ub.session, None)
 """
 
 
-def wait_up(proc, log):
+def wait_up(proc, log, base=BASE):
     for _ in range(120):
         if proc.poll() is not None:
             raise RuntimeError('server exited:\n' + open(log).read()[-3000:])
         try:
-            requests.get(BASE + '/login', timeout=1); return
+            requests.get(base + '/login', timeout=1); return
         except requests.ConnectionError:
             time.sleep(0.5)
     raise RuntimeError('server did not start:\n' + open(log).read()[-3000:])
 
 
-@pytest.fixture(scope='session')
-def server():
+@contextlib.contextmanager
+def make_test_bed(port=PORT, prepare=None):
+    """Sample libraries + fresh app.db + running server. prepare(app_db) may change app.db before the start."""
     work = tempfile.mkdtemp(prefix='cwtest-')
     libs = os.path.join(work, 'libs')
     for name, titles in LIBRARIES.items():
@@ -49,15 +50,17 @@ def server():
     app_db = os.path.join(work, 'app.db')
     subprocess.run([sys.executable, '-c', FRESH_APP_DB, app_db], cwd=ROOT, check=True, capture_output=True)
     c = sqlite3.connect(app_db)
-    c.execute('update settings set config_port=?, config_calibre_dir=?', (PORT, os.path.join(libs, 'Library A')))
+    c.execute('update settings set config_port=?, config_calibre_dir=?', (port, os.path.join(libs, 'Library A')))
     c.commit(); c.close()
+    if prepare:
+        prepare(app_db)
     log = os.path.join(work, 'stdout.log')
     env = dict(os.environ, CALIBRE_LIBRARY_ROOT=libs)
     proc = subprocess.Popen([sys.executable, 'cps.py', '-p', app_db, '-o', os.path.join(work, 'cw.log'), '-i', '127.0.0.1'],
                             cwd=ROOT, stdout=open(log, 'w'), stderr=subprocess.STDOUT, env=env, start_new_session=True)
     try:
-        wait_up(proc, log)
-        yield {'work': work, 'app_db': app_db, 'libs': libs, 'log': log}
+        wait_up(proc, log, f'http://127.0.0.1:{port}')
+        yield {'work': work, 'app_db': app_db, 'libs': libs, 'log': log, 'base': f'http://127.0.0.1:{port}'}
     finally:
         os.killpg(proc.pid, signal.SIGTERM)
         try: proc.wait(10)
@@ -65,11 +68,17 @@ def server():
         if not os.environ.get('CWTEST_KEEP'): shutil.rmtree(work, ignore_errors=True)
 
 
-def login(user='admin', password='admin123'):
+@pytest.fixture(scope='session')
+def server():
+    with make_test_bed() as bed:
+        yield bed
+
+
+def login(user='admin', password='admin123', base=BASE):
     s = requests.Session()
-    page = s.get(BASE + '/login').text
+    page = s.get(base + '/login').text
     token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
-    r = s.post(BASE + '/login', data={'username': user, 'password': password, 'csrf_token': token, 'next': '/'})
+    r = s.post(base + '/login', data={'username': user, 'password': password, 'csrf_token': token, 'next': '/'})
     assert r.ok and 'logout' in r.text.lower(), 'login failed'
     return s
 

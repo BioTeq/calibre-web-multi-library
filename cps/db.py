@@ -681,10 +681,12 @@ class CalibreDB:
     def connect(self):
         from . import libraries
         lib = libraries.current()
-        return self.setup_db(lib.path if lib else self.config_calibre_dir, self.app_db_path)
+        lib_id = lib.id if lib else ub.DEFAULT_LIBRARY_ID
+        ub.state_engine_for(lib_id)        # creates the state database on first use
+        return self.setup_db(lib.path if lib else self.config_calibre_dir, self.app_db_path, ub.state_db_path(lib_id))
 
     @classmethod
-    def setup_db(cls, config_calibre_dir, app_db_path):
+    def setup_db(cls, config_calibre_dir, app_db_path, state_db_path=None):
 
         if not config_calibre_dir:
             cls.config.invalidate()
@@ -705,6 +707,9 @@ class CalibreDB:
                 connection.execute(text('PRAGMA cache_size = 10000;'))
                 connection.execute(text("attach database '{}' as calibre;".format(dbpath.replace("'", "''"))))
                 connection.execute(text("attach database '{}' as app_settings;".format(app_db_path.replace("'", "''"))))
+                if state_db_path:
+                    # per-library user state (read status, shelves, archive...): see ub.STATE_TABLES
+                    connection.execute(text("attach database '{}' as lib_state;".format(state_db_path.replace("'", "''"))))
 
             conn = engine.connect()
             # conn.text_factory = lambda b: b.decode(errors = 'ignore') possible fix for #1302

@@ -57,6 +57,7 @@ class Lib:
 _libs = []
 _lock = threading.Lock()
 _tls = threading.local()
+_last_request_library = None
 
 
 def slugify(name):
@@ -129,6 +130,11 @@ def select_for_request():
     if lib is None:
         lib = by_slug(flask_session.get('library')) or default()
     g.library = lib
+    global _last_request_library
+    if lib is not None and lib.id != _last_request_library:
+        from . import ub
+        ub.forget_state_objects()
+        _last_request_library = lib.id
     if wanted and lib is not None and lib.slug == wanted and flask_session.get('library') != lib.slug:
         flask_session['library'] = lib.slug
     return lib

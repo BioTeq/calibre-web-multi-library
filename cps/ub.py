@@ -19,7 +19,10 @@
 
 import atexit
 import os
+import shutil
+import sqlite3
 import sys
+import threading
 from datetime import datetime, timezone, timedelta
 import itertools
 import uuid
@@ -41,6 +44,7 @@ except ImportError as e:
         OAuthConsumerMixin = BaseException
         oauth_support = False
 from sqlalchemy import create_engine, exc, exists, event, text
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import Column, ForeignKey
 from sqlalchemy import String, Integer, SmallInteger, Boolean, DateTime, Float, JSON
 from sqlalchemy.orm.attributes import flag_modified
@@ -582,12 +586,129 @@ class Library(Base):
     sort = Column(Integer, default=0)
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# Multi-library: per-user book state lives in one small database per library (<config dir>/libraries/library-<id>.db),
+# everything else (users, sessions, settings, the library registry) stays in app.db. ub.session routes each table
+# to the right database, so queries on these tables work unchanged. See MULTI_LIBRARY_PLAN.md.
+STATE_TABLES = ('shelf', 'book_shelf_link', 'shelf_archive', 'book_read_link', 'bookmark', 'archived_book',
+                'downloads', 'kobo_synced_books', 'kobo_reading_state', 'kobo_bookmark', 'kobo_statistics',
+                'thumbnail')
+DEFAULT_LIBRARY_ID = 1
+_state_engines = {}
+_state_lock = threading.Lock()
+
+
+def shared_tables():
+    return [t for t in Base.metadata.sorted_tables if t.name not in STATE_TABLES]
+
+
+def state_tables():
+    return [t for t in Base.metadata.sorted_tables if t.name in STATE_TABLES]
+
+
+def state_db_path(library_id):
+    return os.path.join(os.path.dirname(os.path.abspath(app_DB_path)), 'libraries', 'library-{}.db'.format(library_id))
+
+
+def state_engine_for(library_id):
+    """Engine of a library's state database; created (with its tables) on first use."""
+    with _state_lock:
+        engine = _state_engines.get(library_id)
+        if engine is None:
+            path = state_db_path(library_id)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            engine = create_engine('sqlite:///{0}'.format(path), echo=False)
+            Base.metadata.create_all(engine, tables=state_tables())
+            migrate_state_database(engine)
+            _state_engines[library_id] = engine
+        return engine
+
+
+def current_library_id():
+    from . import libraries
+    lib = libraries.current()
+    return lib.id if lib else DEFAULT_LIBRARY_ID
+
+
+def current_state_engine():
+    return state_engine_for(current_library_id())
+
+
+def _is_state(mapper, clause):
+    if mapper is not None:
+        m = sa_inspect(mapper, raiseerr=False)
+        table = getattr(m, 'local_table', None) if m is not None else None
+        if table is None and getattr(m, 'name', None):          # a Table
+            table = m
+        if table is not None:
+            return getattr(table, 'name', None) in STATE_TABLES
+    if clause is not None:
+        for t in getattr(clause, 'froms', None) or ():
+            if getattr(t, 'name', None) in STATE_TABLES:
+                return True
+        table = getattr(clause, 'table', None)
+        if getattr(table, 'name', None) in STATE_TABLES:
+            return True
+    return False
+
+
+class RoutingSession(Session):
+    """Session on app.db that sends the per-library state tables to the current library's state database."""
+    def get_bind(self, mapper=None, **kw):
+        if _is_state(mapper, kw.get('clause')):
+            return current_state_engine()
+        return super().get_bind(mapper, **kw)
+
+
+def forget_state_objects(_session=None):
+    """Drop cached state rows from the session: their ids repeat between libraries (call when the library changes)."""
+    s = _session or session
+    if s is None:
+        return
+    for obj in list(s.identity_map.values()):
+        if getattr(getattr(type(obj), '__table__', None), 'name', None) in STATE_TABLES:
+            s.expunge(obj)
+
+
+def migrate_state_database(engine):
+    """Schema updates of a library state database (none yet)."""
+    return
+
+
+def move_state_out_of_app_db(engine):
+    """One-time upgrade: copy the book-keyed tables of a single-library app.db into the default library's state
+    database, then drop them from app.db (a backup copy of app.db is kept next to it)."""
+    insp = sa_inspect(engine)
+    present = [t for t in STATE_TABLES if insp.has_table(t)]
+    if not present:
+        return
+    backup = app_DB_path + '.before-multi-library'
+    if not os.path.exists(backup):
+        shutil.copy2(app_DB_path, backup)
+    state_engine_for(DEFAULT_LIBRARY_ID)
+    target = state_db_path(DEFAULT_LIBRARY_ID)
+    con = sqlite3.connect(target)
+    try:
+        con.execute("attach database ? as old", (app_DB_path,))
+        for t in present:
+            new_cols = [r[1] for r in con.execute('pragma main.table_info("{}")'.format(t))]
+            old_cols = {r[1] for r in con.execute('pragma old.table_info("{}")'.format(t))}
+            cols = ', '.join('"{}"'.format(c) for c in new_cols if c in old_cols)
+            if con.execute('select count(*) from main."{}"'.format(t)).fetchone()[0] == 0:
+                con.execute('insert into main."{0}" ({1}) select {1} from old."{0}"'.format(t, cols))
+        con.commit()
+    finally:
+        con.close()
+    with engine.begin() as conn:
+        for t in reversed(present):
+            conn.execute(text('DROP TABLE IF EXISTS "{}"'.format(t)))
+    log.info('Moved book state tables %s from app.db to %s', ', '.join(present), target)
+
+
 # Add missing tables during migration of database
 def add_missing_tables(engine, _session):
-    if not engine.dialect.has_table(engine.connect(), "archived_book"):
-        ArchivedBook.__table__.create(bind=engine)
-    if not engine.dialect.has_table(engine.connect(), "thumbnail"):
-        Thumbnail.__table__.create(bind=engine)
+    # archived_book and thumbnail are library state tables now; they are created in each state database
+    return
 
 
 # migrate all settings missing in registration table
@@ -707,10 +828,7 @@ def create_admin_user(_session):
 def init_db_thread():
     global app_DB_path
     engine = create_engine('sqlite:///{0}'.format(app_DB_path), echo=False)
-
-    Session = scoped_session(sessionmaker())
-    Session.configure(bind=engine)
-    return Session()
+    return RoutingSession(bind=engine)
 
 
 def init_db(app_db_path):
@@ -721,16 +839,15 @@ def init_db(app_db_path):
     app_DB_path = app_db_path
     engine = create_engine('sqlite:///{0}'.format(app_db_path), echo=False)
 
-    Session = scoped_session(sessionmaker())
-    Session.configure(bind=engine)
-    session = Session()
+    session = RoutingSession(bind=engine)
 
     if os.path.exists(app_db_path):
-        Base.metadata.create_all(engine)
+        Base.metadata.create_all(engine, tables=shared_tables())
         migrate_Database(session)
+        move_state_out_of_app_db(engine)
         clean_database(session)
     else:
-        Base.metadata.create_all(engine)
+        Base.metadata.create_all(engine, tables=shared_tables())
         create_admin_user(session)
         create_anonymous_user(session)
 
@@ -761,7 +878,7 @@ def password_change(user_credentials=None):
 
 def get_new_session_instance():
     new_engine = create_engine('sqlite:///{0}'.format(app_DB_path), echo=False)
-    new_session = scoped_session(sessionmaker())
+    new_session = scoped_session(sessionmaker(class_=RoutingSession))
     new_session.configure(bind=new_engine)
 
     atexit.register(lambda: new_session.remove() if new_session else True)
