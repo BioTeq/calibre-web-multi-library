@@ -85,6 +85,14 @@ Optional extras are the same as for Calibre-Web: `optional-requirements.txt`, Im
 pip install pytest && python -m pytest tests_ml -q
 ```
 
+To try it out by hand on three generated sample libraries (nothing of yours is touched):
+
+```bash
+python tests_ml/demo.py
+```
+
+This starts Calibre-Web on `http://127.0.0.1:8090`; log in as `admin` / `admin123`. The demo libraries are created in `./cw-demo`.
+
 The design and the remaining work are described in [MULTI_LIBRARY_PLAN.md](MULTI_LIBRARY_PLAN.md).
 
 ## Everything else

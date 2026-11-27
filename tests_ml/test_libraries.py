@@ -59,3 +59,10 @@ def test_opds_per_library(server):
 def test_switcher_lists_libraries(admin):
     page = admin.get(BASE + '/').text
     assert 'Library A' in page and 'Library B' in page
+
+
+def test_search_form_keeps_the_library(admin):
+    page = admin.get(BASE + '/', params={'library': B}).text
+    assert f'<input type="hidden" name="library" value="{B}">' in page
+    hits = admin.get(BASE + '/search', params={'query': 'Bravo', 'library': B}).text
+    assert 'Bravo One' in hits and 'Alpha One' not in hits

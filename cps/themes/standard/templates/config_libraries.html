@@ -14,8 +14,8 @@
       {% for e in entries %}
         <tr id="library_row_{{ e.row.id }}">
           <td style="width:6em"><input type="number" class="form-control" name="sort_{{ e.row.id }}" value="{{ e.row.sort or 0 }}"></td>
-          <td><input type="text" class="form-control" name="name_{{ e.row.id }}" value="{{ e.row.name }}"></td>
-          <td><code>{{ e.row.path }}</code>{% if e.row.enabled and not e.served %}<br><span class="text-danger">{{_('not served, see the log')}}</span>{% endif %}</td>
+          <td style="min-width:12em"><input type="text" class="form-control" name="name_{{ e.row.id }}" value="{{ e.row.name }}"></td>
+          <td style="word-break:break-all"><code>{{ e.row.path }}</code>{% if e.row.enabled and not e.served %}<br><span class="text-danger">{{_('not served, see the log')}}</span>{% endif %}</td>
           <td>{{ e.books if e.books is not none else '-' }}</td>
           <td><input type="checkbox" name="enabled_{{ e.row.id }}" {% if e.row.enabled %}checked{% endif %}></td>
         </tr>
@@ -25,7 +25,8 @@
     <button type="submit" class="btn btn-default" id="libraries_save">{{_('Save')}}</button>
     <a href="{{ url_for('admin.admin') }}" class="btn btn-default">{{_('Back')}}</a>
   </form>
-  <hr>
+  <div style="clear:both"></div>
+  <h3>{{_('Add a library')}}</h3>
   <form role="form" method="POST" class="form-inline" action="{{ url_for('admin.libraries_configuration', library=None) }}" id="library_add_form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="add">
@@ -33,6 +34,7 @@
     <input type="text" class="form-control" name="new_name" placeholder="{{_('Name (optional)')}}">
     <button type="submit" class="btn btn-default" id="library_add">{{_('Add')}}</button>
   </form>
+  <div style="clear:both"></div>
   <form role="form" method="POST" style="margin-top:1em" action="{{ url_for('admin.libraries_configuration', library=None) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="rescan">

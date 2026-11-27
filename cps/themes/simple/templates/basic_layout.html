@@ -17,7 +17,7 @@
             <span><h1>{{_('Home')}}</h1></span>
           </a>
           <div class="search">
-            <form role="search" action="{{url_for('basic.index')}}" method="GET">
+            <form role="search" action="{{url_for('basic.index')}}" method="GET">{% if g.library and g.all_libraries and g.all_libraries|length > 1 %}<input type="hidden" name="library" value="{{ g.library.slug }}">{% endif %}
               <input type="text" id="query" name="query" placeholder="{{_('Search Library')}}" value="{{ searchterm }}">
               <span>
                 <button type="submit" id="query_submit">{{_('Search')}}</button>
@@ -25,7 +25,7 @@
             </form>
           </div>
           {% if g.libraries and g.libraries|length > 1 and g.library %}
-            <div class="libraries">{% for lib in g.libraries %}<a href="{{ url_for('basic.index', library=lib.slug) }}"{% if lib.slug == g.library.slug %} class="active"{% endif %}><span>{{ lib.name }}</span></a> {% endfor %}</div>
+            <div class="libraries">{% for lib in g.libraries %}<a href="{{ url_for('basic.index', library=lib.slug) }}"{% if lib.slug == g.library.slug %} class="active" style="font-weight:bold"{% endif %}><span>{{ lib.name }}</span></a> {% endfor %}</div>
           {% endif %}
           {% if not current_user.is_anonymous %}
             <a href="{{url_for('web.logout')}}">
