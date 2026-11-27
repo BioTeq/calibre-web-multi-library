@@ -929,10 +929,10 @@ def do_download_file(book, book_format, client, data, headers):
             if config.config_embed_metadata and (
                  (book_format == "kepub" and config.config_kepubifypath) or
                  (book_format != "kepub" and config.config_binariesdir)):
-                output_path = os.path.join(config.config_calibre_dir, book.path)
+                output_path = os.path.join(config.get_book_path(), book.path)
                 if not os.path.exists(output_path):
                     os.makedirs(output_path)
-                output = os.path.join(config.config_calibre_dir, book.path, book_name + "." + book_format)
+                output = os.path.join(config.get_book_path(), book.path, book_name + "." + book_format)
                 gd.downloadFile(book.path, book_name + "." + book_format, output)
                 if book_format == "kepub" and config.config_kepubifypath:
                     filename, download_name = do_kepubify_metadata_replace(book, output)

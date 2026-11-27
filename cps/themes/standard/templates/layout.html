@@ -18,6 +18,7 @@
     {% block header %}{% endblock %}
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet" media="screen">
     <link href="{{ url_for('static', filename='css/upload.css') }}" rel="stylesheet" media="screen">
+    <meta name="cw-library" content="{{ g.library.slug if g.library and g.libraries and g.libraries|length > 1 else '' }}">
   </head>
   <body class="{{ page }} {{ bodyClass }}">
     <!-- Static navbar -->
@@ -46,6 +47,15 @@
         <div class="navbar-collapse collapse">
           {% if current_user.is_authenticated or g.allow_anonymous %}
           <ul class="nav navbar-nav ">
+            {% if g.libraries and g.libraries|length > 1 and g.library %}
+            <li class="dropdown" id="library-switcher">
+              <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false"><span class="glyphicon glyphicon-book"></span><span class="hidden-sm"> {{ g.library.name }}</span> <span class="caret"></span></a>
+              <ul class="dropdown-menu">
+                {% for lib in g.libraries %}<li{% if lib.slug == g.library.slug %} class="active"{% endif %}><a href="{{ url_for('web.index', library=lib.slug) }}">{{ lib.name }}</a></li>
+                {% endfor %}
+              </ul>
+            </li>
+            {% endif %}
             <li><a href="{{url_for('search.advanced_search')}}" id="advanced_search"><span class="glyphicon glyphicon-search"></span><span class="hidden-sm"> {{_('Advanced Search')}}</span></a></li>
             {% if simple==true %} <li><a href="{{url_for('basic.index')}}" id="basic"><span class="glyphicon glyphicon-phone"></span><span>{{_('Simple Theme')}}</span></a><li>{% endif %}
           </ul>
@@ -176,6 +186,21 @@
     {% block modal %}{% endblock %}
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
     <script src="{{ url_for('static', filename='js/libs/jquery.min.js') }}"></script>
+    <script>
+      // multi-library: AJAX calls to this server name the library of the page (links get it from url_for)
+      (function () {
+        var m = document.querySelector('meta[name="cw-library"]'), lib = m && m.content;
+        if (!lib || !window.jQuery) { return; }
+        jQuery.ajaxPrefilter(function (o) {
+          try {
+            var u = new URL(o.url, window.location.href);
+            if (u.origin === window.location.origin && !u.searchParams.has('library')) {
+              u.searchParams.set('library', lib); o.url = u.pathname + u.search + u.hash;
+            }
+          } catch (e) {}
+        });
+      })();
+    </script>
     <!-- Include all compiled plugins (below), or include individual files as needed -->
     <script src="{{ url_for('static', filename='js/libs/bootstrap.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/libs/underscore-umd-min.js') }}"></script>

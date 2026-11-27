@@ -568,6 +568,20 @@ class Thumbnail(Base):
     expiration = Column(DateTime, nullable=True)
 
 
+class Library(Base):
+    """One Calibre library (a folder with metadata.db) served by this instance. See cps/libraries.py."""
+    __tablename__ = 'library'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    slug = Column(String, unique=True, nullable=False)
+    path = Column(String, nullable=False)
+    split_dir = Column(String, nullable=True)   # books stored outside the library folder (calibre "split library")
+    calibre_uuid = Column(String, nullable=True)
+    enabled = Column(Boolean, default=True)
+    sort = Column(Integer, default=0)
+
+
 # Add missing tables during migration of database
 def add_missing_tables(engine, _session):
     if not engine.dialect.has_table(engine.connect(), "archived_book"):

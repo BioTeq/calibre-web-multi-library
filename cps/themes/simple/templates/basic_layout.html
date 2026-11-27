@@ -24,6 +24,9 @@
               </span>
             </form>
           </div>
+          {% if g.libraries and g.libraries|length > 1 and g.library %}
+            <div class="libraries">{% for lib in g.libraries %}<a href="{{ url_for('basic.index', library=lib.slug) }}"{% if lib.slug == g.library.slug %} class="active"{% endif %}><span>{{ lib.name }}</span></a> {% endfor %}</div>
+          {% endif %}
           {% if not current_user.is_anonymous %}
             <a href="{{url_for('web.logout')}}">
               <span>{{_('Logout')}}</span>

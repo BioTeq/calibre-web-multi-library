@@ -418,7 +418,23 @@ class ConfigSQL(object):
         self.save()
 
     def get_book_path(self):
+        """Folder holding the book folders of the current library."""
+        from . import libraries
+        lib = libraries.current()
+        if lib:
+            return lib.book_path
         return self.config_calibre_split_dir if self.config_calibre_split else self.config_calibre_dir
+
+    def library_dir(self):
+        """Folder with metadata.db of the current library."""
+        from . import libraries
+        lib = libraries.current()
+        return lib.path if lib else self.config_calibre_dir
+
+    def library_is_split(self):
+        from . import libraries
+        lib = libraries.current()
+        return bool(lib.split_dir) if lib else bool(self.config_calibre_split)
 
     def store_calibre_uuid(self, calibre_db, Library_table):
         from . import app

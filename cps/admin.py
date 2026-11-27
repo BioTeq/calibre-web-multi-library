@@ -44,7 +44,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.exc import IntegrityError, OperationalError, InvalidRequestError, ArgumentError
 from sqlalchemy.sql.expression import func, or_, text
 
-from . import constants, logger, helper, services, cli_param, themes
+from . import constants, logger, libraries, helper, services, cli_param, themes
 from . import db, calibre_db, ub, web_server, config, updater_thread, gdriveutils, \
     kobo_sync_status, schedule
 from .helper import check_valid_domain, send_test_mail, reset_password, generate_password_hash, check_email, \
@@ -115,6 +115,8 @@ def before_request():
         #    logout_user()
     #except AttributeError:
     #    pass    # ? fails on requesting /ajax/emailstat during restart ?
+    libraries.select_for_request()
+    g.libraries = libraries.all_libraries()
     g.constants = constants
     g.google_site_verification = os.getenv('GOOGLE_SITE_VERIFICATION', '')
     g.allow_registration = config.config_public_reg
@@ -1808,6 +1810,7 @@ def _db_configuration_update_helper():
             flash(_("DB is not Writeable"), category="warning")
     calibre_db.update_config(config, config.config_calibre_dir, ub.app_DB_path)
     config.save()
+    libraries.sync_from_config(config)
     return _db_configuration_result(None, gdrive_error)
 
 

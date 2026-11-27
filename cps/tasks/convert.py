@@ -99,7 +99,7 @@ class TaskConvert(CalibreTask):
         if config.config_use_google_drive:
             os.remove(self.file_path + '.' + self.settings['old_book_format'].lower())
             if df_cover:
-                os.remove(os.path.join(config.config_calibre_dir, cur_book.path, "cover.jpg"))
+                os.remove(os.path.join(config.get_book_path(), cur_book.path, "cover.jpg"))
 
         if filename:
             if config.config_use_google_drive:
@@ -270,11 +270,11 @@ class TaskConvert(CalibreTask):
                 tmp_dir = get_temp_dir()
                 calibredb_binarypath = os.path.join(config.config_binariesdir, SUPPORTED_CALIBRE_BINARIES["calibredb"])
                 my_env = os.environ.copy()
-                if config.config_calibre_split:
-                    my_env['CALIBRE_OVERRIDE_DATABASE_PATH'] = os.path.join(config.config_calibre_dir, "metadata.db")
-                    library_path = config.config_calibre_split_dir
+                if config.library_is_split():
+                    my_env['CALIBRE_OVERRIDE_DATABASE_PATH'] = os.path.join(config.library_dir(), "metadata.db")
+                    library_path = config.get_book_path()
                 else:
-                    library_path = config.config_calibre_dir
+                    library_path = config.library_dir()
 
                 opf_command = [calibredb_binarypath, 'show_metadata', '--as-opf', str(self.book_id),
                                '--with-library', library_path]

@@ -158,6 +158,9 @@ def create_app():
     lm.session_protection = 'strong' if config.config_session == 1 else "basic"
 
     db.CalibreDB.update_config(config, config.config_calibre_dir, cli_param.settings_path)
+    from . import libraries
+    libraries.sync_from_config(config)
+    app.url_defaults(libraries.add_library_to_url)
 
     updater_thread.init_updater(config, web_server)
     # Perform dry run of updater and exit afterward

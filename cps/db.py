@@ -679,7 +679,9 @@ class CalibreDB:
 
 
     def connect(self):
-        return self.setup_db(self.config_calibre_dir, self.app_db_path)
+        from . import libraries
+        lib = libraries.current()
+        return self.setup_db(lib.path if lib else self.config_calibre_dir, self.app_db_path)
 
     @classmethod
     def setup_db(cls, config_calibre_dir, app_db_path):
