@@ -2,7 +2,7 @@
 
 Goal: one Calibre-Web instance serves several Calibre libraries. Users switch between them in the web UI, OPDS
 lists them all, and each user's reading state (read status, shelves, bookmarks, Kobo sync…) stays correct for each library.
-Based on Calibre-Web `0.6.28b` with the theme system (`cps/themes/{standard,caliblur,simple}`).
+This is a permanent, separate fork (not intended for merging upstream). Based on Calibre-Web `0.6.28b` with the theme system (`cps/themes/{standard,caliblur,simple}`).
 
 ## 1. How the code works today
 
@@ -59,7 +59,7 @@ Because each library's book ids live in their own database, **the ~200 queries o
 
 *Considered and rejected:*
 - **A full `app.db` per library:** users, passwords, OAuth links and settings would be duplicated and drift apart.
-- **A `library_id` column on every book table:** it means editing ~200 queries and joins, and every future upstream change to them would need the same edit.
+- **A `library_id` column on every book table:** it means editing ~200 queries and joins, and every Calibre-Web change to them merged into this fork later would need the same edit.
 
 **Access control.**
 - A table `user_library(user_id, library_id)` plus a default library per user.
