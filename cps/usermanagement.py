@@ -26,7 +26,7 @@ from flask_httpauth import HTTPBasicAuth
 from werkzeug.datastructures import Authorization
 from werkzeug.security import check_password_hash
 
-from . import lm, ub, config, logger, limiter, constants, services
+from . import lm, ub, config, logger, limiter, constants, services, libraries
 from .reverse_proxy_auth import is_shared_secret_valid, is_trusted_proxy_source
 
 
@@ -80,6 +80,8 @@ def requires_basic_auth_if_no_ano(f):
                 return auth.auth_error_callback()
         g.flask_httpauth_user = user if user is not True \
             else auth.username if auth else None
+        if isinstance(g.flask_httpauth_user, ub.User):
+            libraries.select_for_request(g.flask_httpauth_user)
         return auth.ensure_sync(f)(*args, **kwargs)
     return decorated
 

@@ -47,6 +47,9 @@ log = logger.create()
 @opds.route("/opds")
 @requires_basic_auth_if_no_ano
 def feed_index():
+    # several libraries and none chosen in the URL: start with the list of libraries
+    if len(g.get('libraries') or []) > 1 and not request.args.get('library'):
+        return render_xml_template('libraries.xml', libraries=g.libraries)
     return render_xml_template('index.xml')
 
 

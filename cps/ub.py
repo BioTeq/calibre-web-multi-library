@@ -142,6 +142,13 @@ def store_combo_ids(result):
 
 class UserBase:
 
+    def library_ids_allowed(self):
+        """None = all libraries, else the set of allowed library ids (may be empty)."""
+        raw = (getattr(self, 'allowed_libraries', '') or '').strip()
+        if not raw:
+            return None
+        return {int(x) for x in raw.split(',') if x.strip().isdigit() and int(x) > 0}
+
     @property
     def is_authenticated(self):
         return self.is_active
@@ -261,6 +268,10 @@ class User(UserBase, Base):
     remote_auth_token = relationship('RemoteAuthToken', backref='user', lazy='dynamic')
     view_settings = Column(JSON, default={})
     kobo_only_shelves_sync = Column(Integer, default=0)
+    # multi-library: '' = all libraries, else comma-separated library ids ('0' = none)
+    allowed_libraries = Column(String, default="")
+    default_library = Column(Integer, default=0)      # 0 = first allowed library
+    kobo_library = Column(Integer, default=0)         # library a Kobo of this user syncs with (0 = default)
 
 
 if oauth_support:
@@ -314,6 +325,9 @@ class Anonymous(AnonymousUserMixin, UserBase):
         self.allowed_column_value = data.allowed_column_value
         self.view_settings = data.view_settings
         self.kobo_only_shelves_sync = data.kobo_only_shelves_sync
+        self.allowed_libraries = data.allowed_libraries
+        self.default_library = data.default_library
+        self.kobo_library = data.kobo_library
 
     def role_admin(self):
         return False
@@ -786,9 +800,27 @@ def migrate_remote_auth_token_table(engine, _session):
 # Migrate database to current version, has to be updated after every database change. Currently, migration from
 # maybe 4/5 versions back to current should work.
 # Migration is done by checking if relevant columns are existing, and then adding rows with SQL commands
+def migrate_user_library_columns(engine, _session):
+    try:
+        _session.query(exists().where(User.kobo_library)).scalar()
+        _session.commit()
+    except exc.OperationalError:  # columns of multi-library support are missing
+        _session.rollback()
+        with engine.connect() as conn:
+            trans = conn.begin()
+            for col, typ in (('allowed_libraries', "String DEFAULT ''"), ('default_library', 'Integer DEFAULT 0'),
+                             ('kobo_library', 'Integer DEFAULT 0')):
+                try:
+                    conn.execute(text("ALTER TABLE user ADD column '{}' {}".format(col, typ)))
+                except exc.OperationalError:
+                    pass
+            trans.commit()
+
+
 def migrate_Database(_session):
     engine = _session.bind
     add_missing_tables(engine, _session)
+    migrate_user_library_columns(engine, _session)
     migrate_registration_table(engine, _session)
     migrate_user_session_table(engine, _session)
     migrate_remote_auth_token_table(engine, _session)

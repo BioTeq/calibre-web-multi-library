@@ -116,7 +116,7 @@ def before_request():
     #except AttributeError:
     #    pass    # ? fails on requesting /ajax/emailstat during restart ?
     libraries.select_for_request()
-    g.libraries = libraries.all_libraries()
+    g.all_libraries = libraries.all_libraries()
     g.constants = constants
     g.google_site_verification = os.getenv('GOOGLE_SITE_VERIFICATION', '')
     g.allow_registration = config.config_public_reg
@@ -238,6 +238,68 @@ def admin():
                                  feature_support=feature_support, schedule_time=schedule_time,
                                  schedule_duration=schedule_duration,
                                  title=_("Admin page"), page="admin")
+
+
+@admi.route("/admin/libraries", methods=["GET", "POST"])
+@user_login_required
+@admin_required
+def libraries_configuration():
+    """List, add, rename, order, enable and disable the Calibre libraries of this instance."""
+    if request.method == "POST":
+        to_save = request.form.to_dict()
+        action = to_save.get("action", "save")
+        rows = ub.session.query(ub.Library).all()
+        first_signature = None
+        enabled_rows = sorted([r for r in rows if r.enabled], key=lambda r: (r.sort or 0, r.id))
+        if enabled_rows:
+            first_signature = libraries.custom_columns_signature(enabled_rows[0].path)
+        if action == "save":
+            for row in rows:
+                name = strip_whitespaces(to_save.get("name_{}".format(row.id), row.name)) or row.name
+                row.name = name
+                try:
+                    row.sort = int(to_save.get("sort_{}".format(row.id), row.sort or 0))
+                except ValueError:
+                    pass
+                want = to_save.get("enabled_{}".format(row.id)) == "on"
+                if want and not row.enabled:
+                    why = libraries.problem(row, first_signature)
+                    if why:
+                        flash(_("Library %(name)s can't be enabled: %(why)s", name=row.name, why=why), category="error")
+                        continue
+                row.enabled = want
+            if not any(r.enabled for r in rows):
+                flash(_("At least one library has to stay enabled"), category="error")
+                ub.session.rollback()
+                return redirect(url_for('admin.libraries_configuration'))
+        elif action == "add":
+            path = strip_whitespaces(re.sub(r'[\\/]metadata\.db$', '', to_save.get("path", ""), flags=re.IGNORECASE))
+            known = {os.path.realpath(r.path) for r in rows}
+            if not os.path.isfile(os.path.join(path, "metadata.db")):
+                flash(_("No Calibre library (metadata.db) in %(path)s", path=path), category="error")
+            elif os.path.realpath(path) in known:
+                flash(_("This library is already in the list"), category="warning")
+            else:
+                name = strip_whitespaces(to_save.get("new_name", "")) or os.path.basename(os.path.normpath(path))
+                row = ub.Library(name=name, slug=libraries._unique_slug(ub.session, name), path=path,
+                                 sort=max([r.sort or 0 for r in rows] + [0]) + 1, enabled=True)
+                why = libraries.problem(row, first_signature)
+                if why:
+                    row.enabled = False
+                    flash(_("Library %(name)s added but not enabled: %(why)s", name=name, why=why), category="warning")
+                ub.session.add(row)
+        elif action == "rescan":
+            libraries.sync_from_config(config)
+        ub.session_commit("Libraries changed")
+        libraries.reload()
+        return redirect(url_for('admin.libraries_configuration'))
+    rows = ub.session.query(ub.Library).order_by(ub.Library.sort, ub.Library.id).all()
+    served = {lib.id for lib in libraries.all_libraries()}
+    entries = [{'row': r, 'books': libraries.book_count(r.path), 'served': r.id in served} for r in rows]
+    return render_title_template("config_libraries.html", entries=entries,
+                                 root=os.environ.get(libraries.ENV_ROOT, ''),
+                                 gdrive=config.config_use_google_drive,
+                                 title=_("Libraries"), page="libraries")
 
 
 @admi.route("/admin/dbconfig", methods=["GET", "POST"])
@@ -2020,8 +2082,27 @@ def _db_configuration_result(error_flash=None, gdrive_error=None):
                                  title=_("Database Configuration"), page="dbconfig")
 
 
+def _apply_library_access(to_save, content):
+    """Multi-library fields of the user form (only sent to admins when there are several libraries)."""
+    if not to_save.get('library_access_form') or not current_user.role_admin():
+        return
+    libs = libraries.all_libraries()
+    ticked = [lib.id for lib in libs if to_save.get('library_{}'.format(lib.id)) == 'on']
+    if len(ticked) == len(libs):
+        content.allowed_libraries = ''            # all libraries, also ones added later
+    else:
+        content.allowed_libraries = ','.join(str(i) for i in ticked) or '0'
+    try:
+        content.default_library = int(to_save.get('default_library') or 0)
+        if 'kobo_library' in to_save:
+            content.kobo_library = int(to_save.get('kobo_library') or 0)
+    except ValueError:
+        pass
+
+
 def _handle_new_user(to_save, content, languages, translations, kobo_support):
     content.default_language = to_save["default_language"]
+    _apply_library_access(to_save, content)
     content.locale = to_save.get("locale", content.locale)
 
     content.sidebar_view = sum(int(key[5:]) for key in to_save if key.startswith('show_'))
@@ -2133,6 +2214,7 @@ def _handle_edit_user(to_save, content, languages, translations, kobo_support):
             content.default_language = to_save["default_language"]
         if to_save.get("locale"):
             content.locale = to_save["locale"]
+        _apply_library_access(to_save, content)
         try:
             anonymous = content.is_anonymous
             content.role = constants.selected_roles(to_save)

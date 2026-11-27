@@ -69,12 +69,62 @@ def _snapshot(row):
     return Lib(row.id, row.name, row.slug, row.path, row.split_dir or None, row.calibre_uuid)
 
 
+def _read_only(path):
+    import sqlite3, urllib.parse
+    return sqlite3.connect('file:' + urllib.parse.quote(os.path.join(path, 'metadata.db')) + '?mode=ro', uri=True)
+
+
+def custom_columns_signature(path):
+    """The custom columns of a library: Calibre-Web maps them once for all libraries, so they must match."""
+    try:
+        con = _read_only(path)
+        try:
+            return tuple(con.execute('select id, label, datatype from custom_columns where mark_for_delete = 0 '
+                                     'order by id').fetchall())
+        finally:
+            con.close()
+    except Exception:
+        return None
+
+
+def book_count(path):
+    try:
+        con = _read_only(path)
+        try:
+            return con.execute('select count(*) from books').fetchone()[0]
+        finally:
+            con.close()
+    except Exception:
+        return None
+
+
+def problem(row, first_signature):
+    """Why a library can't be served (or None)."""
+    if not os.path.isfile(os.path.join(row.path, 'metadata.db')):
+        return 'metadata.db not found'
+    if first_signature is not None and custom_columns_signature(row.path) != first_signature:
+        return 'its custom columns differ from the default library'
+    return None
+
+
 def reload():
-    """Re-read the registry from app.db (enabled libraries, in display order)."""
-    from . import ub
+    """Re-read the registry from app.db: enabled libraries, in display order, that can be served together."""
+    from . import ub, config
     rows = ub.session.query(ub.Library).filter(ub.Library.enabled == True).order_by(ub.Library.sort, ub.Library.id).all()
+    rows = [r for r in rows if os.path.isfile(os.path.join(r.path, 'metadata.db'))]
+    libs = []
+    first_signature = custom_columns_signature(rows[0].path) if rows else None
+    for r in rows:
+        why = problem(r, first_signature)
+        if why:
+            log.warning('Library %s is not served: %s', r.name, why)
+            continue
+        libs.append(_snapshot(r))
+    if len(libs) > 1 and getattr(config, 'config_use_google_drive', False):
+        log.warning('Google Drive works with one library only; serving %s only', libs[0].name)
+        libs = libs[:1]
     with _lock:
-        _libs[:] = [_snapshot(r) for r in rows if os.path.isfile(os.path.join(r.path, 'metadata.db'))]
+        _libs[:] = libs
     return list(_libs)
 
 
@@ -121,15 +171,60 @@ def use(lib):
         _tls.library = old
 
 
-def select_for_request():
-    """Called first in every request: decide the library and remember an explicit choice in the session."""
+def visible_to(user):
+    """Libraries a user may open: admins all, others the ones in their allowed list ('' = all)."""
+    libs = all_libraries()
+    if user is None:
+        return libs
+    try:
+        if user.role_admin():
+            return libs
+    except (AttributeError, TypeError):
+        pass
+    allowed = user.library_ids_allowed() if hasattr(user, 'library_ids_allowed') else None
+    if allowed is None:
+        return libs
+    return [lib for lib in libs if lib.id in allowed]
+
+
+def _request_user():
+    try:
+        from .cw_login import current_user
+        return current_user._get_current_object() if current_user else None
+    except Exception:
+        return None
+
+
+def select_for_request(user=None, prefer=None):
+    """Decide the library of this request: ?library=, then the session's library, then `prefer`, then the user's
+    default, then the first library the user may open. Called first in every request (user from the session) and
+    again once a request has authenticated its user another way (OPDS basic auth, Kobo token)."""
     if not has_request_context():
         return None
+    if user is None:
+        user = _request_user()
+    visible = visible_to(user)
+    endpoint = request.endpoint or ''
+    if (not visible and getattr(user, 'is_authenticated', False) and all_libraries()
+            and 'static' not in endpoint and endpoint not in ('web.logout', 'web.login')):
+        from flask import abort
+        abort(403)            # the user may not open any library
+    visible_slugs = {lib.slug: lib for lib in visible}
     wanted = request.args.get('library')
-    lib = by_slug(wanted)
+    lib = visible_slugs.get(wanted) or visible_slugs.get(flask_session.get('library'))
+    if lib is None and prefer:
+        lib = next((l for l in visible if l.id == prefer), None)
     if lib is None:
-        lib = by_slug(flask_session.get('library')) or default()
+        dflt = getattr(user, 'default_library', 0) or 0
+        lib = next((l for l in visible if l.id == dflt), None) or (visible[0] if visible else default())
+    old = g.get('library')
     g.library = lib
+    g.libraries = visible
+    if old is not None and lib is not None and old.id != lib.id and g.get('lib_sql') is not None:
+        try:
+            g.lib_sql.close()
+        finally:
+            g.lib_sql = None          # the Calibre connection of the previous choice is closed, the next use reopens
     global _last_request_library
     if lib is not None and lib.id != _last_request_library:
         from . import ub

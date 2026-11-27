@@ -68,7 +68,7 @@ from flask import g, Blueprint, abort, request
 from .cw_login import login_user, current_user
 from flask_babel import gettext as _
 
-from . import logger, config, calibre_db, db, helper, ub, lm, limiter
+from . import logger, config, calibre_db, db, helper, ub, lm, limiter, libraries
 from .render_template import render_title_template
 from .usermanagement import user_login_required
 
@@ -165,6 +165,7 @@ def requires_kobo_auth(f):
             )
             if user is not None:
                 login_user(user)
+                libraries.select_for_request(user, prefer=user.kobo_library or None)
                 [limiter.limiter.clear(limit.limit, *limit.request_args) for limit in limiter.current_limits]
                 return f(*args, **kwargs)
         log.debug("Received Kobo request without a recognizable auth token.")

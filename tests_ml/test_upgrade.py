@@ -45,3 +45,19 @@ def test_state_moves_to_default_library():
         assert not read('library-b'), 'old read status leaked into the new library'
         assert 'Old shelf' in s.get(base + '/', params={'library': 'library-a'}).text
         assert 'Old shelf' not in s.get(base + '/', params={'library': 'library-b'}).text
+
+
+def strip_multi_library_columns(app_db):
+    c = sqlite3.connect(app_db)
+    for col in ('allowed_libraries', 'default_library', 'kobo_library'):
+        c.execute(f'alter table user drop column {col}')
+    c.execute('drop table library')
+    c.commit(); c.close()
+
+
+def test_user_table_of_an_older_install_is_upgraded():
+    with make_test_bed(port=8093, prepare=strip_multi_library_columns) as bed:
+        cols = {r[1] for r in sqlite3.connect(bed['app_db']).execute('pragma table_info(user)')}
+        assert {'allowed_libraries', 'default_library', 'kobo_library'} <= cols
+        s = login(base=bed['base'])
+        assert 'Bravo One' in s.get(bed['base'] + '/book/1', params={'library': 'library-b'}).text

@@ -92,8 +92,8 @@ Because each library's book ids live in their own database, **the ~200 queries o
 | 1 | Registry, library per request, links carry the library, switcher | done |
 | 2 | State database per library, routing session, migration | done |
 | 3 | Tasks, covers and thumbnails, scheduler per library | done |
-| 4 | OPDS library navigation, Kobo per library, admin page, user access, custom-column and Google Drive guards | next |
-| 5 | Hardening: upgrade test from a real `app.db`, speed check on a large library | |
+| 4 | OPDS library navigation, Kobo per library, admin page, user access, custom-column and Google Drive guards | done |
+| 5 | Hardening: upgrade test from a real `app.db`, speed check on a large library | next |
 
 Phases 1 and 2 belong together in a release: phase 1 alone shares reading state between libraries.
 

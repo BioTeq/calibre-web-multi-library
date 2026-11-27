@@ -1,0 +1,42 @@
+{% extends theme("layout.html") %}
+{% block body %}
+<div class="discover">
+  <h2>{{title}}</h2>
+  <p>{{_('Every library is a folder with a Calibre metadata.db. The first enabled library is the default; users switch between libraries in the navigation bar.')}}
+  {% if root %}<br>{{_('Libraries found under')}} <code>{{ root }}</code> {{_('are added automatically.')}}{% endif %}</p>
+  {% if gdrive %}<div class="alert alert-warning">{{_('Google Drive is enabled: only the default library is served.')}}</div>{% endif %}
+  <form role="form" method="POST" action="{{ url_for('admin.libraries_configuration', library=None) }}" autocomplete="off" id="libraries_form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="save">
+    <table class="table table-striped" id="libraries_table">
+      <thead><tr><th>{{_('Order')}}</th><th>{{_('Name')}}</th><th>{{_('Folder')}}</th><th>{{_('Books')}}</th><th>{{_('Enabled')}}</th></tr></thead>
+      <tbody>
+      {% for e in entries %}
+        <tr id="library_row_{{ e.row.id }}">
+          <td style="width:6em"><input type="number" class="form-control" name="sort_{{ e.row.id }}" value="{{ e.row.sort or 0 }}"></td>
+          <td><input type="text" class="form-control" name="name_{{ e.row.id }}" value="{{ e.row.name }}"></td>
+          <td><code>{{ e.row.path }}</code>{% if e.row.enabled and not e.served %}<br><span class="text-danger">{{_('not served, see the log')}}</span>{% endif %}</td>
+          <td>{{ e.books if e.books is not none else '-' }}</td>
+          <td><input type="checkbox" name="enabled_{{ e.row.id }}" {% if e.row.enabled %}checked{% endif %}></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit" class="btn btn-default" id="libraries_save">{{_('Save')}}</button>
+    <a href="{{ url_for('admin.admin') }}" class="btn btn-default">{{_('Back')}}</a>
+  </form>
+  <hr>
+  <form role="form" method="POST" class="form-inline" action="{{ url_for('admin.libraries_configuration', library=None) }}" id="library_add_form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="add">
+    <input type="text" class="form-control" name="path" id="library_path" placeholder="{{_('Folder of the library')}}" style="min-width:24em">
+    <input type="text" class="form-control" name="new_name" placeholder="{{_('Name (optional)')}}">
+    <button type="submit" class="btn btn-default" id="library_add">{{_('Add')}}</button>
+  </form>
+  <form role="form" method="POST" style="margin-top:1em" action="{{ url_for('admin.libraries_configuration', library=None) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="rescan">
+    <button type="submit" class="btn btn-default" id="library_rescan">{{_('Look for new libraries')}}</button>
+  </form>
+</div>
+{% endblock %}
