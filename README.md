@@ -75,7 +75,30 @@ Then open `http://localhost:8083` and log in as `admin` / `admin123`, and change
 
 Optional extras are the same as for Calibre-Web: `optional-requirements.txt`, ImageMagick for covers, Calibre's `ebook-convert` for conversions, and kepubify for Kobo.
 
-**Docker:** there is no prebuilt image of this fork yet. The `pip install calibreweb` package and the linuxserver.io image contain upstream Calibre-Web, not this fork.
+### Docker
+
+Every push to the `multi-library` branch builds `ghcr.io/bioteq/calibre-web-multi-library` (amd64 and arm64). The build is smoke-tested on two sample libraries before it is published. Tags: `latest`, plus `sha-<commit>` to pin a version. (The `pip install calibreweb` package and the linuxserver.io image are upstream Calibre-Web, not this fork.)
+
+```yaml
+services:
+  calibre-web:
+    image: ghcr.io/bioteq/calibre-web-multi-library:latest
+    container_name: calibre-web
+    environment:
+      - PUID=1000                        # files are written as this user/group
+      - PGID=1000
+      - TZ=Europe/Berlin
+      - CALIBRE_DEFAULT_LIBRARY=Fiction  # optional: folder under /books opened first (else the first one)
+      # - CALIBRE_WEB_PORT=8083          # optional: listening port (default 8083)
+    volumes:
+      - /path/to/config:/config          # settings, reading state per library, cache, log
+      - /path/to/libraries:/books        # every sub-folder with a metadata.db is a library
+    ports:
+      - 8083:8083
+    restart: unless-stopped
+```
+
+The image includes ImageMagick (covers) and kepubify (Kobo). It does not include Calibre's `ebook-convert`, so there are no format conversions unless you add it. To update, re-pull the image and recreate the container.
 
 ## Tests
 
