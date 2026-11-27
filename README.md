@@ -98,7 +98,28 @@ services:
     restart: unless-stopped
 ```
 
+Optional: `CALIBRE_ADMIN_PASSWORD` sets the admin password on the very first start, instead of the well-known `admin123`. Remove it from the stack afterwards.
+
 The image includes ImageMagick (covers) and kepubify (Kobo). It does not include Calibre's `ebook-convert`, so there are no format conversions unless you add it. To update, re-pull the image and recreate the container.
+
+### Security notes
+
+- **The image:**
+  - The app runs as `PUID:PGID`, not as root.
+  - The image is rebuilt weekly with the base image's security updates.
+  - kepubify is a pinned, checksum-verified release, and the build actions are pinned to commits.
+  - Every build is smoke-tested in a hardened container (read-only root filesystem, `no-new-privileges`, reduced capabilities) before it is published. The same options work in a stack:
+    ```yaml
+        read_only: true
+        tmpfs: [/tmp]
+        security_opt: [no-new-privileges:true]
+        cap_drop: [ALL]
+        cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+    ```
+- **Exposure:** don't publish Calibre-Web directly to the internet. Its OPDS and Kobo endpoints use passwords or tokens over plain HTTP. For access from outside, use a VPN, or a reverse proxy with HTTPS.
+- **Mounts:** mount only the library folders Calibre-Web needs (one bind mount per library under `/books`), not a whole share.
+- **Accounts:** after the first start, set your own admin password, turn off anonymous browsing and public registration unless you need them, and give each user only the libraries they need.
+- **Updates:** the self-updater is disabled in this fork. Update by re-pulling the image.
 
 ## Tests
 

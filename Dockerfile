@@ -18,10 +18,16 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends imagemagick ghostscript libmagic1 gosu curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# kepubify for Kobo (Calibre-Web looks for it at this path)
+# kepubify for Kobo (Calibre-Web looks for it at this path); pinned version, checksum verified
+ARG KEPUBIFY_VERSION=v5.0.0
 RUN mkdir -p /opt/kepubify \
- && case "${TARGETARCH:-amd64}" in arm64) K=kepubify-linux-arm64 ;; *) K=kepubify-linux-64bit ;; esac \
- && curl -fsSL -o /opt/kepubify/kepubify-linux-64bit "https://github.com/pgaskin/kepubify/releases/latest/download/$K" \
+ && case "${TARGETARCH:-amd64}" in \
+      arm64) K=kepubify-linux-arm64; SUM=6d6b44725f3161f3fa9f364c3c7cabd810a67e90420e18c84fe9f366c80d6782 ;; \
+      *)     K=kepubify-linux-64bit; SUM=cb77fe364f780feea8de4586600f7160c7516586c21d9a80b1504c6630389069 ;; \
+    esac \
+ && curl -fsSL -o /opt/kepubify/kepubify-linux-64bit \
+      "https://github.com/pgaskin/kepubify/releases/download/${KEPUBIFY_VERSION}/$K" \
+ && echo "$SUM  /opt/kepubify/kepubify-linux-64bit" | sha256sum -c - \
  && chmod 755 /opt/kepubify/kepubify-linux-64bit
 
 WORKDIR /app

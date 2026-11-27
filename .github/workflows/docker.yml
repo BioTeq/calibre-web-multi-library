@@ -4,6 +4,8 @@ on:
   push:
     branches: [multi-library]
     tags: ['v*']
+  schedule:
+    - cron: '17 4 * * 1'      # weekly rebuild: security updates of the base image and system packages
   workflow_dispatch:
 
 permissions:
@@ -17,45 +19,56 @@ jobs:
   image:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # actions pinned to commits (a moved tag can't change what runs here)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1            # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1     # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069   # v4.4.1
 
       - name: Build for the smoke test (amd64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc     # v7.4.0
         with:
           context: .
           platforms: linux/amd64
           load: true
+          pull: true
           tags: cwml:test
 
-      - name: Smoke test on two sample libraries
+      - name: Smoke test on two sample libraries, hardened container
         run: |
           python3 -c "import sys; sys.path.insert(0, 'tests_ml'); import sample_libs; \
             sample_libs.build('/tmp/books', 'Library A', ['Alpha One']); \
             sample_libs.build('/tmp/books', 'Library B', ['Bravo One'])"
           mkdir -p /tmp/config
           docker run -d --name cw -p 8083:8083 -e PUID="$(id -u)" -e PGID="$(id -g)" \
+            -e CALIBRE_ADMIN_PASSWORD='Smoke-Test-Pass-2026!' \
+            --read-only --tmpfs /tmp --security-opt no-new-privileges:true \
+            --cap-drop ALL --cap-add CHOWN --cap-add SETUID --cap-add SETGID --cap-add DAC_OVERRIDE --cap-add FOWNER \
             -v /tmp/config:/config -v /tmp/books:/books cwml:test
           for i in $(seq 1 60); do curl -fs -o /dev/null http://127.0.0.1:8083/login && break; sleep 2; done
-          curl -fsS -u admin:admin123 http://127.0.0.1:8083/opds | grep -q 'Library B'
-          curl -fsS -u admin:admin123 'http://127.0.0.1:8083/opds/new?library=library-b' | grep -q 'Bravo One'
-          curl -fsS -u admin:admin123 'http://127.0.0.1:8083/opds/new?library=library-a' | grep -q 'Alpha One'
+          # the default password must not work, the chosen one must
+          test "$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin123 http://127.0.0.1:8083/opds)" = 401
+          A='admin:Smoke-Test-Pass-2026!'
+          curl -fsS -u "$A" http://127.0.0.1:8083/opds | grep -q 'Library B'
+          curl -fsS -u "$A" 'http://127.0.0.1:8083/opds/new?library=library-b' | grep -q 'Bravo One'
+          curl -fsS -u "$A" 'http://127.0.0.1:8083/opds/new?library=library-a' | grep -q 'Alpha One'
+          test "$(docker exec cw awk '/^Uid:/{print $2}' /proc/1/status)" != 0   # the app does not run as root
           ls -l /tmp/config /tmp/config/libraries
 
       - name: Container log
         if: always()
         run: docker logs cw 2>&1 | tail -50 || true; tail -50 /tmp/config/calibre-web.log || true
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550           # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302        # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           tags: |
@@ -64,10 +77,11 @@ jobs:
             type=sha,format=short
 
       - name: Build and push (amd64, arm64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc     # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
+          pull: true
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
