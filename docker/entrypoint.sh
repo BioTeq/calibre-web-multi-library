@@ -17,12 +17,8 @@ first_start_password() {
 }
 
 if [ "$(id -u)" = "0" ]; then
-    if ! getent group "$PGID" >/dev/null; then
-        groupadd -g "$PGID" calibre
-    fi
-    if ! getent passwd "$PUID" >/dev/null; then
-        useradd -u "$PUID" -g "$PGID" -d /config -s /usr/sbin/nologin -M calibre
-    fi
+    # gosu switches to the numeric uid:gid directly, so no user entry is needed (works with a read-only image)
+    export HOME=/config
     mkdir -p /config/cache
     # only Calibre-Web's own folder; the libraries in /books keep their owners
     chown -R "$PUID:$PGID" /config
