@@ -41,7 +41,7 @@ def wait_up(proc, log, base=BASE):
 
 
 @contextlib.contextmanager
-def make_test_bed(port=PORT, prepare=None):
+def make_test_bed(port=PORT, prepare=None, env_extra=None):
     """Sample libraries + fresh app.db + running server. prepare(app_db) may change app.db before the start."""
     work = tempfile.mkdtemp(prefix='cwtest-')
     libs = os.path.join(work, 'libs')
@@ -55,7 +55,7 @@ def make_test_bed(port=PORT, prepare=None):
     if prepare:
         prepare(app_db)
     log = os.path.join(work, 'stdout.log')
-    env = dict(os.environ, CALIBRE_LIBRARY_ROOT=libs)
+    env = dict(os.environ, CALIBRE_LIBRARY_ROOT=libs, **(env_extra or {}))
     proc = subprocess.Popen([sys.executable, 'cps.py', '-p', app_db, '-o', os.path.join(work, 'cw.log'), '-i', '127.0.0.1'],
                             cwd=ROOT, stdout=open(log, 'w'), stderr=subprocess.STDOUT, env=env, start_new_session=True)
     try:

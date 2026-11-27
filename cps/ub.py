@@ -670,6 +670,39 @@ def forget_state_objects(_session=None):
             s.expunge(obj)
 
 
+def all_state_library_ids():
+    """Ids of all libraries that have a state database (also disabled or removed ones)."""
+    folder = os.path.dirname(state_db_path(0))
+    ids = set()
+    if os.path.isdir(folder):
+        for f in os.listdir(folder):
+            if f.startswith('library-') and f.endswith('.db') and f[8:-3].isdigit():
+                ids.add(int(f[8:-3]))
+    return sorted(ids)
+
+
+def delete_user_state(user_id):
+    """Remove a user's book state from every library's state database."""
+    statements = [
+        'DELETE FROM book_shelf_link WHERE shelf IN (SELECT id FROM shelf WHERE user_id = :u)',
+        'DELETE FROM shelf WHERE user_id = :u',
+        'DELETE FROM shelf_archive WHERE user_id = :u',
+        'DELETE FROM book_read_link WHERE user_id = :u',
+        'DELETE FROM bookmark WHERE user_id = :u',
+        'DELETE FROM archived_book WHERE user_id = :u',
+        'DELETE FROM downloads WHERE user_id = :u',
+        'DELETE FROM kobo_synced_books WHERE user_id = :u',
+        'DELETE FROM kobo_bookmark WHERE kobo_reading_state_id IN (SELECT id FROM kobo_reading_state WHERE user_id = :u)',
+        'DELETE FROM kobo_statistics WHERE kobo_reading_state_id IN (SELECT id FROM kobo_reading_state WHERE user_id = :u)',
+        'DELETE FROM kobo_reading_state WHERE user_id = :u',
+    ]
+    for library_id in all_state_library_ids():
+        with state_engine_for(library_id).begin() as conn:
+            for sql in statements:
+                conn.execute(text(sql), {'u': user_id})
+    forget_state_objects()
+
+
 def migrate_state_database(engine):
     """Schema updates of a library state database (none yet)."""
     return

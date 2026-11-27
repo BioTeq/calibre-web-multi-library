@@ -18,13 +18,23 @@
 
 import datetime
 
-from . import config, constants
+from . import config, constants, libraries
 from .services.background_scheduler import BackgroundScheduler, CronTrigger, use_APScheduler
 from .tasks.database import TaskReconnectDatabase
 from .tasks.clean import TaskClean
 from .tasks.thumbnail import TaskGenerateCoverThumbnails, TaskGenerateSeriesThumbnails, TaskClearCoverThumbnailCache
 from .services.worker import WorkerThread
 from .tasks.metadata_backup import TaskBackupMetadata
+
+def _per_library(factory):
+    """One task per library: each is created while its library is current, so it remembers and runs in it."""
+    def make(lib):
+        def create():
+            with libraries.use(lib):
+                return factory()
+        return create
+    return [make(lib) for lib in (libraries.all_libraries() or [None])]
+
 
 def get_scheduled_tasks(reconnect=True):
     tasks = list()
@@ -37,16 +47,20 @@ def get_scheduled_tasks(reconnect=True):
 
     # Generate metadata.opf file for each changed book
     if config.schedule_metadata_backup:
-        tasks.append([lambda: TaskBackupMetadata("en"), 'backup metadata', False])
+        for create in _per_library(lambda: TaskBackupMetadata("en")):
+            tasks.append([create, 'backup metadata', False])
 
     # Generate all missing book cover thumbnails
     if config.schedule_generate_book_covers:
-        tasks.append([lambda: TaskClearCoverThumbnailCache(0), 'delete superfluous book covers', True])
-        tasks.append([lambda: TaskGenerateCoverThumbnails(), 'generate book covers', False])
+        for create in _per_library(lambda: TaskClearCoverThumbnailCache(0)):
+            tasks.append([create, 'delete superfluous book covers', True])
+        for create in _per_library(lambda: TaskGenerateCoverThumbnails()):
+            tasks.append([create, 'generate book covers', False])
 
     # Generate all missing series thumbnails
     if config.schedule_generate_series_covers:
-        tasks.append([lambda: TaskGenerateSeriesThumbnails(), 'generate book covers', False])
+        for create in _per_library(lambda: TaskGenerateSeriesThumbnails()):
+            tasks.append([create, 'generate book covers', False])
 
     return tasks
 

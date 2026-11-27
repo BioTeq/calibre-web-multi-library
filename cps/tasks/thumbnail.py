@@ -506,8 +506,11 @@ class TaskClearCoverThumbnailCache(CalibreTask):
 
     def delete_all_thumbnails(self):
         try:
-            self.app_db_session.query(ub.Thumbnail).filter(ub.Thumbnail.type == constants.THUMBNAIL_TYPE_COVER).delete()
-            self.app_db_session.commit()
+            # the cache folder is shared by all libraries: forget the cover thumbnails of every library
+            for library_id in ub.all_state_library_ids():
+                with ub.state_engine_for(library_id).begin() as conn:
+                    conn.execute(ub.Thumbnail.__table__.delete().where(
+                        ub.Thumbnail.type == constants.THUMBNAIL_TYPE_COVER))
             self.cache.delete_cache_dir(constants.CACHE_TYPE_THUMBNAILS)
         except Exception as ex:
             self.log.debug('Error deleting thumbnail directory: ' + str(ex))

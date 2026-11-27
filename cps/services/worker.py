@@ -174,6 +174,9 @@ class CalibreTask:
         self.id = uuid.uuid4()
         self.self_cleanup = False
         self._scheduled = False
+        # multi-library: a task works on the library that was current when it was created
+        from .. import libraries
+        self.library = libraries.current()
 
     @abc.abstractmethod
     def run(self, worker_thread):
@@ -195,8 +198,10 @@ class CalibreTask:
         self.stat = STAT_STARTED
 
         # catch any unhandled exceptions in a task and automatically fail it
+        from .. import libraries
         try:
-            self.run(*args)
+            with libraries.use(getattr(self, 'library', None) or libraries.current()):
+                self.run(*args)
         except Exception as ex:
             self._handleError(str(ex))
             log.exception(ex)
